@@ -142,7 +142,7 @@ MAX31888::Error MAX31888::measureBlocking(float &temperature_c)
     uint8_t data[10]; // 3B command, 32x2B FIFO, 2B CRC + margin
     int16_t raw;
 
-    if (!_ow.reset()) return ERR_NO_DEVICE;
+    if (!_ow.reset()) { debug("MAX31888 measureBlocking: reset#1 (no device) failed\r\n"); return ERR_NO_DEVICE; }
     _ow.write(ROM_SKIP, 1);
     _ow.write(CMD_CONVERT_T, 1);        // start conversion, with parasite power on at the end
     data[0]=CMD_CONVERT_T;
@@ -151,16 +151,21 @@ MAX31888::Error MAX31888::measureBlocking(float &temperature_c)
     ThisThread::sleep_for(conversionTimeMs() * 1ms);// in case of parasite supply, 17.5ms is maximum conversion time for MAX31888
     _ow.depower();
 
-    if(!_ow.check_crc16(data,1,&data[1])){return ERR_CRC;}
+    if(!_ow.check_crc16(data,1,&data[1])){
+        debug("MAX31888 measureBlocking: CONVERT_T CRC failed, rx=[%02X %02X]\r\n", data[1], data[2]);
+        return ERR_CRC;
+    }
     else {
-        if (!_ow.reset()) return ERR_NO_DEVICE;
+        if (!_ow.reset()) { debug("MAX31888 measureBlocking: reset#2 (no device) failed\r\n"); return ERR_NO_DEVICE; }
         _ow.write(CMD_WRITE_REG, 1);
         data[0]=CMD_READ_REG;         // Read Register
-        data[1]=REG_FIFO_DATA;         // Starting Adddress -> FIFO Data Register   
+        data[1]=REG_FIFO_DATA;         // Starting Adddress -> FIFO Data Register
         data[2]=0x01;         // Length (Bytes -1) -> 2 Bytes
         _ow.write_bytes(data, 3);
         _ow.read_bytes(&data[3], 4); // we need 2 bytes of data and 2 bytes of CRC 16
-        if(!_ow.check_crc16(data,5,&data[5])){ 
+        if(!_ow.check_crc16(data,5,&data[5])){
+            debug("MAX31888 measureBlocking: FIFO_DATA CRC failed, data=[%02X %02X] rx=[%02X %02X]\r\n",
+                  data[3], data[4], data[5], data[6]);
             return ERR_CRC;
         }
     }
