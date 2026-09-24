@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdint.h>
 
 #define BOOT_CTX_MAGIC 0xAA55AA55

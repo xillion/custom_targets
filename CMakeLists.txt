@@ -11,6 +11,7 @@ target_sources(mbed-pt-logger-l433
 	INTERFACE 
 		PT_LOGGER_L433/PeripheralPins.c
 		PT_LOGGER_L433/system_clock_new.c
+		PT_LOGGER_L433/boot_init.cpp
 		# PT_LOGGER_L433/analogin_device.c
 		# PT_LOGGER_L433/analogin_api.c
 		# PT_LOGGER_L433/USBDevice.cpp
