@@ -43,7 +43,10 @@ constexpr uint8_t WEEKDAYS     = 0x0C;
 constexpr uint8_t MONTHS       = 0x0D;
 constexpr uint8_t YEARS        = 0x0E;
 
-// Alarm page    (page 0x02, addresses 0x10–0x16)
+// Alarm page    (page 0x02, addresses 0x10–0x16): Sec/Min/Hour/Day/Weekday/
+// Month/Year, confirmed against the RV-3129-C3 App Manual rev 1.1 register
+// map (section 3.4). The real bug was the AE_x enable-bit polarity (see
+// RV3129Bits::ALM_ENABLE below), not the register count.
 constexpr uint8_t ALM_SEC      = 0x10;
 constexpr uint8_t ALM_MIN      = 0x11;
 constexpr uint8_t ALM_HOUR     = 0x12;
@@ -129,8 +132,11 @@ constexpr uint8_t EECTRL_FD0    = 0x04;
 constexpr uint8_t EECTRL_ThE    = 0x02;
 constexpr uint8_t EECTRL_ThP    = 0x01;
 
-// Alarm enable bits in alarm registers (MSB of each alarm register)
-constexpr uint8_t ALM_ENABLE    = 0x80; ///< 0=alarm active for this field, 1=disabled
+// Alarm enable bits in alarm registers (MSB of each alarm register).
+// Per datasheet section 3.4: AE_x=1 means this field is ENABLED (included
+// in the match); AE_x=0 means DISABLED (ignored). Earlier driver versions
+// had this backwards, which is why the alarm condition was never satisfied.
+constexpr uint8_t ALM_ENABLE    = 0x80; ///< 1=alarm field enabled/compared, 0=disabled/ignored
 
 } // namespace RV3129Bits
 
@@ -309,9 +315,9 @@ public:
     /**
      * @brief Set the alarm to fire at a given Unix timestamp.
      *
-     * Internally converts to BCD and sets all alarm registers. Alarm enable
-     * bits (AE_x) in each alarm register are cleared (enabled) for Seconds,
-     * Minutes, Hours, Days, Months and Years; Weekday alarm is disabled.
+     * Sec/Min/Hour/Day alarm registers are set with AE_x=1 (enabled,
+     * included in the match); Weekday/Month/Year are set with AE_x=0
+     * (disabled/ignored).
      *
      * @param alarmTime  Unix timestamp of the desired alarm instant.
      * @return true on success.
@@ -321,8 +327,9 @@ public:
     /**
      * @brief Read back the alarm time as a Unix timestamp.
      *
-     * Only the alarm registers with AE_x=0 (enabled) contribute to the
-     * returned value. Returns 0 and false if alarm registers are inconsistent.
+     * Fields with AE_x=1 (enabled) contribute their stored value; disabled
+     * fields (AE_x=0) fall back to the corresponding field of the current
+     * time/date.
      */
     bool getAlarm(time_t &alarmTime);
 

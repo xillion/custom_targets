@@ -23,28 +23,25 @@
  *
  * I2C protocol (16-bit frame)
  * ---------------------------
- *   Byte 1 (command byte): [CMD3 CMD2 CMD1 CMD0 | ADDR1 ADDR0 | D9 D8]
- *   Byte 2 (data byte)   : [D7  D6   D5   D4    | D3   D2     | D1 D0]
+ *   Byte 1 (command byte): [CMD3 CMD2 CMD1 CMD0 | A3 A2 A1 A0]
+ *   Byte 2 (data byte)   : [D7  D6   D5   D4    | D3   D2  D1 D0]
  *
- *   For AD5142A (8-bit), D9:D8 are always 0.
- *   ADDR1:ADDR0 selects the target register:
- *     0b00 = RDAC1    0b01 = RDAC2
- *     0b10 = EEMEM1   0b11 = EEMEM2  (user-accessible EEPROM words)
+ *   Channel select is a single bit, A0 (A3:A1 = 0 for RDAC1/RDAC2):
+ *     A0=0 = RDAC1    A0=1 = RDAC2
  *
- *   Command codes (CMD3:CMD0):
+ *   Command codes (CMD3:CMD0), per datasheet Table 10 — note these are the
+ *   literal 4-bit values, NOT the datasheet's "Command Number" column labels
+ *   (e.g. "Command Number 9" has bit pattern 0b0111, not 0x9):
  *     0x1  (0b0001) = Write to RDAC (scratchpad)
- *     0x3  (0b0011) = Store RDAC → EEPROM (copy volatile → NVM)
- *     0x9  (0b1001) = Restore EEPROM → RDAC (copy NVM → volatile)
- *     0xA  (0b1010) = Read back RDAC or EEPROM register
- *     0x2  (0b0010) = Decrement by 1
- *     0x6  (0b0110) = Increment by 1
- *     0x4  (0b0100) = Decrement by 6 dB
- *     0x8  (0b1000) = Increment by 6 dB
+ *     0x3  (0b0011) = Read back contents (RDAC or EEPROM, selected by D1:D0)
+ *     0x6  (0b0110) = Copy EEPROM → RDAC (restore)
+ *     0x7  (0b0111) = Copy RDAC → EEPROM (store)
  *
  * Read-back
  * ---------
- *   Write the command byte with CMD=0xA and the ADDR bits for the desired
- *   register, then issue a repeated-start I2C read for 2 bytes.
+ *   Write the command byte with CMD=0x3 and the A0 bit for the desired
+ *   channel, with data byte D1:D0 = 11 to select RDAC (01 = EEPROM), then
+ *   issue a repeated-start I2C read for 2 bytes.
  *   The device returns [0 0 0 0 0 0 D9 D8] [D7..D0].  For AD5142A D9:D8=0.
  *
  * EEPROM write timing
@@ -151,11 +148,11 @@ private:
     I2C  _i2c;
     int  _addr;   // 8-bit write address (R/W bit = 0)
 
-    // Command nibbles (CMD3:CMD0)
+    // Command nibbles (CMD3:CMD0), per datasheet Table 10
     static constexpr uint8_t CMD_WRITE_RDAC    = 0x1;
-    static constexpr uint8_t CMD_STORE_EEPROM  = 0x3;
-    static constexpr uint8_t CMD_RESTORE_RDAC  = 0x9;
-    static constexpr uint8_t CMD_READ          = 0xA;
+    static constexpr uint8_t CMD_READ          = 0x3;
+    static constexpr uint8_t CMD_RESTORE_RDAC  = 0x6;
+    static constexpr uint8_t CMD_STORE_EEPROM  = 0x7;
 
     // EEPROM ACK polling
     static constexpr int     EEPROM_POLL_INTERVAL_MS = 2;
@@ -163,16 +160,15 @@ private:
 
     /**
      * @brief Build the command byte.
-     * Byte layout: [CMD3 CMD2 CMD1 CMD0 | ADDR1 ADDR0 | 0 0]
+     * Byte layout: [CMD3 CMD2 CMD1 CMD0 | A3 A2 A1 A0]
      *
      * @param cmd   4-bit command nibble
-     * @param ch    Channel selector (contributes ADDR1:ADDR0)
+     * @param ch    Channel selector (contributes A0; A3:A1 = 0)
      * @return      Command byte
      */
     static uint8_t makeCmd(uint8_t cmd, Channel ch)
     {
-        // ADDR field = ch value, placed in bits [3:2] of byte; D9:D8 = 0
-        return static_cast<uint8_t>((cmd << 4) | ((ch & 0x03) << 2));
+        return static_cast<uint8_t>((cmd << 4) | (ch & 0x01));
     }
 
     /**

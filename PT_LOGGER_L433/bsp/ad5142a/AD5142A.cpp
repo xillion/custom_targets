@@ -32,25 +32,25 @@ bool AD5142A::setWiper(Channel ch, uint8_t position)
 // =============================================================================
 bool AD5142A::getWiper(Channel ch, uint8_t &position)
 {
-    // Send the read-back command byte, then do a repeated-start read.
-    // The device returns 2 bytes: [0 0 0 0 0 0 D9 D8] [D7..D0].
-    // For AD5142A D9:D8 = 0 always, so we only need byte 1.
-    char cmd = static_cast<char>(makeCmd(CMD_READ, ch));
+    // Command 3 (0b0011) = "Read back contents". Data byte's D1:D0 select
+    // the register to read: 11 = RDAC, 01 = EEPROM. We always want RDAC.
+    // Per datasheet Figure 40, the readback instruction is a complete,
+    // STOP-terminated write, followed by a separate START'd read of a
+    // single data byte (D7:D0) — no repeated start, no second byte;
+    // the AD5122A/AD5142A do not support repeat readback.
+    char cmd[2] = { static_cast<char>(makeCmd(CMD_READ, ch)), 0x03 };
 
-    // Write command byte with repeated start (no STOP)
-    if (_i2c.write(_addr, &cmd, 1, true) != 0) {
+    if (_i2c.write(_addr, cmd, 2) != 0) {
         return false;
     }
 
-    char data[2] = {0, 0};
+    char data = 0;
     int  read_addr = _addr | 0x01;
-    if (_i2c.read(read_addr, data, 2) != 0) {
+    if (_i2c.read(read_addr, &data, 1) != 0) {
         return false;
     }
 
-    // data[0] = [0 0 0 0 0 0 D9 D8] — D9:D8 are 0 for 8-bit device
-    // data[1] = [D7 D6 D5 D4 D3 D2 D1 D0]
-    position = static_cast<uint8_t>(data[1]);
+    position = static_cast<uint8_t>(data);
     return true;
 }
 

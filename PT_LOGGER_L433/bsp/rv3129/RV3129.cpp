@@ -232,16 +232,17 @@ bool RV3129::setAlarm(time_t alarmTime)
         return false;
     }
 
-    // Write 7 alarm registers (0x10..0x16)
-    // AE_x bit = 0 means the field participates in alarm matching
+    // Write the 7 alarm registers (0x10..0x16). AE_x bit = 1 means the field
+    // is enabled (included in the match); AE_x = 0 means disabled/ignored.
+    // Sec/Min/Hour/Day are matched; Weekday/Month/Year are ignored.
     uint8_t raw[7];
-    raw[0] = decToBcd(static_cast<uint8_t>(t->tm_sec));               // Seconds alarm  – enabled
-    raw[1] = decToBcd(static_cast<uint8_t>(t->tm_min));               // Minutes alarm  – enabled
-    raw[2] = decToBcd(static_cast<uint8_t>(t->tm_hour));              // Hours alarm    – enabled
-    raw[3] = decToBcd(static_cast<uint8_t>(t->tm_mday));              // Days alarm     – enabled
-    raw[4] = ALM_ENABLE;                                               // Weekday alarm  – disabled (AE=1)
-    raw[5] = decToBcd(static_cast<uint8_t>(t->tm_mon + 1));           // Months alarm   – enabled
-    raw[6] = decToBcd(static_cast<uint8_t>(t->tm_year - 100));        // Years alarm    – enabled
+    raw[0] = decToBcd(static_cast<uint8_t>(t->tm_sec))  | ALM_ENABLE; // Second alarm – enabled
+    raw[1] = decToBcd(static_cast<uint8_t>(t->tm_min))  | ALM_ENABLE; // Minute alarm – enabled
+    raw[2] = decToBcd(static_cast<uint8_t>(t->tm_hour)) | ALM_ENABLE; // Hour alarm   – enabled
+    raw[3] = decToBcd(static_cast<uint8_t>(t->tm_mday)) | ALM_ENABLE; // Day alarm    – enabled
+    raw[4] = 0;                                                       // Weekday alarm – disabled
+    raw[5] = 0;                                                       // Month alarm   – disabled
+    raw[6] = 0;                                                       // Year alarm    – disabled
 
     return writeRegs(ALM_SEC, raw, 7);
 }
@@ -253,15 +254,19 @@ bool RV3129::getAlarm(time_t &alarmTime)
         return false;
     }
 
-    struct tm t = {};
-    // Only decode fields whose AE bit = 0 (alarm active)
-    t.tm_sec   = (raw[0] & ALM_ENABLE) ? 0 : bcdToDec(raw[0] & 0x7F);
-    t.tm_min   = (raw[1] & ALM_ENABLE) ? 0 : bcdToDec(raw[1] & 0x7F);
-    t.tm_hour  = (raw[2] & ALM_ENABLE) ? 0 : bcdToDec(raw[2] & 0x3F);
-    t.tm_mday  = (raw[3] & ALM_ENABLE) ? 1 : bcdToDec(raw[3] & 0x3F);
-    // Skip weekday (raw[4])
-    t.tm_mon   = (raw[5] & ALM_ENABLE) ? 0 : bcdToDec(raw[5] & 0x1F) - 1;
-    t.tm_year  = (raw[6] & ALM_ENABLE) ? 70 : bcdToDec(raw[6]) + 100;
+    // Disabled fields (AE_x=0) fall back to the current time/date's value
+    // for that field.
+    time_t now = 0;
+    if (!getUnixTime(now)) {
+        return false;
+    }
+    struct tm t = *gmtime(&now);
+    if (raw[0] & ALM_ENABLE) t.tm_sec  = bcdToDec(raw[0] & 0x7F);
+    if (raw[1] & ALM_ENABLE) t.tm_min  = bcdToDec(raw[1] & 0x7F);
+    if (raw[2] & ALM_ENABLE) t.tm_hour = bcdToDec(raw[2] & 0x3F);
+    if (raw[3] & ALM_ENABLE) t.tm_mday = bcdToDec(raw[3] & 0x3F);
+    if (raw[5] & ALM_ENABLE) t.tm_mon  = bcdToDec(raw[5] & 0x1F) - 1;
+    if (raw[6] & ALM_ENABLE) t.tm_year = bcdToDec(raw[6] & 0x7F) + 100;
     t.tm_isdst = 0;
 
     alarmTime = mktime(&t);
